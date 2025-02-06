@@ -12,5 +12,5 @@ pip install libdani
 ```
 
 But it's mostly designed to copy/paste into your own project and modify.
-Like shadcn.
+Like [shadcn](https://ui.shadcn.com/).
 
