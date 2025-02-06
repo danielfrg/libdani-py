@@ -2,6 +2,7 @@
 name = "libdani"
 version = "0.1.0"
 description = "Add your description here"
+license = "Do What The F*ck You Want To Public License"
 readme = "README.md"
 authors = [
     { name = "Daniel Rodriguez", email = "daniel@danielfrg.com" }
