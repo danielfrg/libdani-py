@@ -1,0 +1,17 @@
+[project]
+name = "libdani"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Daniel Rodriguez", email = "daniel@danielfrg.com" }
+]
+requires-python = ">=3.13"
+dependencies = []
+
+[project.scripts]
+libdani = "libdani:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
