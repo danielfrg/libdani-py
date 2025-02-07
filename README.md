@@ -11,6 +11,12 @@ Can be installed with:
 pip install libdani
 ```
 
-But it's mostly designed to copy/paste into your own project and modify.
-Like [shadcn](https://ui.shadcn.com/).
+But it's mostly designed to copy/paste into your specific project and modify
+as needed. Like [shadcn](https://ui.shadcn.com/).
+
+Each module has a README and some examples.
+
+## Modules
+
+- [checkpoint](/danielfrg/libdani-py/tree/main/src/libdani/checkpoint)
 

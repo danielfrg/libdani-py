@@ -1,10 +1,11 @@
 import sys
 import json
 from pathlib import Path
-from dataclasses import dataclass, asdict
 from functools import wraps
 from datetime import datetime
-from typing import Any, TypeVar, Generic, Literal, Type
+from dataclasses import dataclass, asdict
+from inspect import signature, Parameter
+from typing import Optional, TypeVar, Generic, Literal, Type
 
 from loguru import logger
 
@@ -32,10 +33,9 @@ class Checkpoint(Generic[T]):
         last_item: int = 0,
         status: Literal["running", "done"] = "running",
     ):
-        start_from = last_item + 1 if status == "running" else last_item
         return cls(
             state=state,
-            start_from=start_from,
+            start_from=last_item,
             last_item=last_item,
             timestamp=datetime.now().isoformat(),
             status=status,
@@ -43,7 +43,8 @@ class Checkpoint(Generic[T]):
 
 
 def checkpoint(
-    StateClass: Type[T],
+    StateClass: Optional[Type[T]] = None,
+    output: Optional[str | Path] = None,
     filename: str = ".ckpt",
     freq: int = 1,
     log_level: str = "error",
@@ -52,10 +53,11 @@ def checkpoint(
     Decorator that wraps a function and keeps track of execution state.
     Automatically resumes from the last checkpoint.
 
+    :param output: Path to the output file where the results will be saved.
     :param StateClass: The user-defined state class.
     :param filename: Checkpoint file location.
     :param freq: Frequency of checkpoint saves.
-    :param log_enabled: Set to False to disable logging.
+    :param log_level: Log level for the logger.
     """
 
     def decorator(func):
@@ -65,6 +67,9 @@ def checkpoint(
             log.remove(0)
             log.add(sys.stdout, level=log_level.upper())
 
+        func_signature = signature(func)
+        func_params = func_signature.parameters
+
         @wraps(func)
         def wrapper(*args, **kwargs):
             log.info(f"Starting function `{func.__name__}`")
@@ -73,9 +78,10 @@ def checkpoint(
             data = load_checkpoint(filename)
             if data:
                 try:
+                    state = StateClass(**data["state"]) if data["state"] else None
                     ckpt = Checkpoint(
-                        state=StateClass(**data["state"]),
-                        start_from=data["last_item"] + 1,
+                        state=state,
+                        start_from=data["last_item"],
                         last_item=data["last_item"],
                         timestamp=data["timestamp"],
                         status=data["status"],
@@ -85,20 +91,38 @@ def checkpoint(
                     log.error(
                         f"Failed to load checkpoint `{filename}` due to: {e}. Resetting state."
                     )
-                    ckpt = Checkpoint.from_state(StateClass())
+                    data = StateClass() if StateClass else None
+                    ckpt = Checkpoint.from_state(data)
             else:
                 log.warning("No checkpoint found. Starting fresh.")
-                ckpt = Checkpoint.from_state(StateClass())
+                data = StateClass() if StateClass else None
+                ckpt = Checkpoint.from_state(data)
 
             kwargs["ckpt"] = ckpt
             kwargs["state"] = ckpt.state
+
+            # Filter kwargs to only include parameters that exist in the function signature
+            filtered_kwargs = {}
+            for param_name, param in func_params.items():
+                if param_name in kwargs:
+                    filtered_kwargs[param_name] = kwargs[param_name]
+                elif param.default is Parameter.empty and param.kind not in (
+                    Parameter.VAR_POSITIONAL,
+                    Parameter.VAR_KEYWORD,
+                ):
+                    log.warning(f"Required parameter '{param_name}' not provided")
 
             # Save initial checkpoint before execution
             save_checkpoint(filename, ckpt)
 
             # Run the generator internally and update the state
             try:
-                for _ in func(*args, **kwargs):
+                for value in func(*args, **filtered_kwargs):
+                    if value is not None:
+                        print(value)
+                        with open(output, "a") as f:
+                            f.write(f"{value}\n")
+
                     ckpt.last_item += 1
 
                     if ckpt.last_item % freq == 0:
