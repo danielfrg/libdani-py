@@ -12,9 +12,10 @@ Features:
 - Handle output files 
 
 
-For example if this function failed and would have to restart from scratch:
+For example if this function failed and was called again it would run
+everything from scratch:
 
-```
+```python
 def work():
     for i in range(100_000):
         # do work
@@ -22,12 +23,23 @@ def work():
         file.write(output)
 ```
 
-Replace it with
+Replace it with this and it will keep a checkpoint and start from where it left
+off.
 
-```
+```python
 @checkpoint
 def work(ckpt):
     for i in range(ckpt.start_from, 100_000):
         # do work
+
+        file.write(output)
+
+# or let it handle the file for you:
+
+@checkpoint(output="example-file.py")
+def work(ckpt):
+    for i in range(ckpt.start_from, 100_000):
+        # do work
+
         yield output
 ```
