@@ -15,6 +15,7 @@ N = 10
 @checkpoint(output="example-file.txt")
 def work(ckpt: Checkpoint):
     for i in range(ckpt.start_from, N):
+        print("Wrote to file:", i)
         yield i
 
         if i == 4:

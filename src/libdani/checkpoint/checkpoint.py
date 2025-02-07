@@ -1,5 +1,7 @@
 import sys
 import json
+import inspect
+import hashlib
 from pathlib import Path
 from functools import wraps
 from datetime import datetime
@@ -21,10 +23,11 @@ class Checkpoint(Generic[T]):
     state: T
 
     # metadata
-    start_from: int
+    start_from: int  # Same as last item but user friendly
     last_item: int  # Last item that was processed
     timestamp: str
     status: Literal["running", "done"]
+    function_hash: str
 
     @classmethod
     def from_state(
@@ -32,6 +35,7 @@ class Checkpoint(Generic[T]):
         state: T,
         last_item: int = 0,
         status: Literal["running", "done"] = "running",
+        function_hash: str = "",
     ):
         return cls(
             state=state,
@@ -39,13 +43,14 @@ class Checkpoint(Generic[T]):
             last_item=last_item,
             timestamp=datetime.now().isoformat(),
             status=status,
+            function_hash=function_hash,
         )
 
 
 def checkpoint(
     StateClass: Optional[Type[T]] = None,
     output: Optional[str | Path] = None,
-    filename: str = ".ckpt",
+    filename: str = ".ckpt.json",
     freq: int = 1,
     log_level: str = "error",
 ):
@@ -70,6 +75,8 @@ def checkpoint(
         func_signature = signature(func)
         func_params = func_signature.parameters
 
+        current_hash = get_function_hash(func)
+
         @wraps(func)
         def wrapper(*args, **kwargs):
             log.info(f"Starting function `{func.__name__}`")
@@ -78,26 +85,38 @@ def checkpoint(
             data = load_checkpoint(filename)
             if data:
                 try:
-                    state = StateClass(**data["state"]) if data["state"] else None
-                    ckpt = Checkpoint(
-                        state=state,
-                        start_from=data["last_item"],
-                        last_item=data["last_item"],
-                        timestamp=data["timestamp"],
-                        status=data["status"],
-                    )
-                    log.info(f"Checkpoint loaded: {ckpt}")
+                    # Check if function has changed
+                    stored_hash = data.get("function_hash", "")
+
+                    if stored_hash != current_hash:
+                        log.warning("Function code has changed. Starting fresh.")
+                        data = None
+                    else:
+                        if StateClass and "state" in data:
+                            state = StateClass(**data["state"])
+                        else:
+                            state = None
+                        ckpt = Checkpoint(
+                            state=state,
+                            start_from=data["last_item"],
+                            last_item=data["last_item"],
+                            timestamp=data["timestamp"],
+                            status=data["status"],
+                            function_hash=data["function_hash"],
+                        )
+                        log.info(f"Checkpoint loaded: {ckpt}")
                 except Exception as e:
                     log.error(
                         f"Failed to load checkpoint `{filename}` due to: {e}. Resetting state."
                     )
-                    data = StateClass() if StateClass else None
-                    ckpt = Checkpoint.from_state(data)
-            else:
-                log.warning("No checkpoint found. Starting fresh.")
-                data = StateClass() if StateClass else None
-                ckpt = Checkpoint.from_state(data)
+                    data = None
 
+            if data is None:
+                log.warning("Starting with fresh state.")
+                data = StateClass() if StateClass else None
+                ckpt = Checkpoint.from_state(data, function_hash=current_hash)
+
+            # Add checkpoint-related arguments to kwargs
             kwargs["ckpt"] = ckpt
             kwargs["state"] = ckpt.state
 
@@ -119,7 +138,6 @@ def checkpoint(
             try:
                 for value in func(*args, **filtered_kwargs):
                     if value is not None:
-                        print(value)
                         with open(output, "a") as f:
                             f.write(f"{value}\n")
 
@@ -163,3 +181,13 @@ def save_checkpoint(filename: str, ckpt: Checkpoint):
     del data["start_from"]
 
     filepath.write_text(json.dumps(data, indent=2))
+
+
+def get_function_hash(func) -> str:
+    """Generate a hash of the function's source code."""
+    try:
+        source = inspect.getsource(func)
+        return hashlib.sha256(source.encode()).hexdigest()
+    except (TypeError, OSError):
+        # If we can't get the source code, use the function's string representation
+        return hashlib.sha256(str(func).encode()).hexdigest()

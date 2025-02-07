@@ -18,5 +18,5 @@ Each module has a README and some examples.
 
 ## Modules
 
-- [checkpoint](/danielfrg/libdani-py/tree/main/src/libdani/checkpoint)
+- [checkpoint](/src/libdani/checkpoint)
 
