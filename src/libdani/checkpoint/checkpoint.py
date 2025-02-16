@@ -23,7 +23,7 @@ class Checkpoint(Generic[T]):
     state: T
 
     # metadata
-    start_from: int  # Same as last item but user friendly
+    start_from: int  # Same as last item but more user friendly
     last_item: int  # Last item that was processed
     timestamp: str
     status: Literal["running", "done"]
@@ -96,6 +96,7 @@ def checkpoint(
                             state = StateClass(**data["state"])
                         else:
                             state = None
+
                         ckpt = Checkpoint(
                             state=state,
                             start_from=data["last_item"],
@@ -104,6 +105,9 @@ def checkpoint(
                             status=data["status"],
                             function_hash=data["function_hash"],
                         )
+                        if ckpt.status == "done":
+                            log.info("Found completed checkpoint, returning state")
+                            return ckpt.state
                         log.info(f"Checkpoint loaded: {ckpt}")
                 except Exception as e:
                     log.error(
@@ -136,10 +140,23 @@ def checkpoint(
 
             # Run the generator internally and update the state
             try:
-                for value in func(*args, **filtered_kwargs):
-                    if value is not None:
+                generator = func(*args, **filtered_kwargs)
+                last_value = None
+
+                while True:
+                    try:
+                        value = next(generator)
+                    except StopIteration as e:
+                        # Capture the final return value from the generator.
+                        last_value = e.value
+                        break
+
+                    if value is not None and output:
                         with open(output, "a") as f:
                             f.write(f"{value}\n")
+
+                    if value is not None:
+                        last_value = value
 
                     ckpt.last_item += 1
 
@@ -150,6 +167,8 @@ def checkpoint(
                 ckpt.status = "done"
                 save_checkpoint(filename, ckpt)
                 log.info(f"Function `{func.__name__}` completed successfully.")
+
+                return last_value
 
             except Exception as e:
                 log.error(f"Error during execution of `{func.__name__}`: {e}")
